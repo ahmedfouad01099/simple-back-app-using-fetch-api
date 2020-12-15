@@ -17,6 +17,7 @@ const postSchema = new Schema(
     },
     creator: {
       type: Object,
+      ref: 'User',
       required: true,
     },
   },
