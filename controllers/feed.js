@@ -4,7 +4,8 @@ const { validationResult } = require("express-validator");
 
 const Post = require("../models/post");
 const User = require("../models/user");
-const post = require("../models/post");
+const io = require("../socket");
+const user = require("../models/user");
 
 exports.getPosts = (req, res, next) => {
   const currentPage = req.query.page || 1;
@@ -15,10 +16,13 @@ exports.getPosts = (req, res, next) => {
     .then((count) => {
       totalItems = count;
       return Post.find()
+        .populate("creator")
+        .sort({ createdAt: -1 })
         .skip((currentPage - 1) * perPage)
         .limit(perPage);
     })
     .then((posts) => {
+      // console.log('populate function', posts);
       res.status(200).json({
         message: "Fetched posts successfully.",
         posts: posts,
@@ -31,18 +35,6 @@ exports.getPosts = (req, res, next) => {
       }
       next(err);
     });
-  // Post.find()
-  //   .then((posts) => {
-  //     res
-  //       .status(200)
-  //       .json({ message: "fetched posts successfully.", posts: posts });
-  //   })
-  // .catch((err) => {
-  //   if (!err.statusCode) {
-  //     err.statusCode = 505;
-  //   }
-  //   next(err);
-  // });
 };
 
 exports.createPost = (req, res, next) => {
@@ -80,6 +72,13 @@ exports.createPost = (req, res, next) => {
       user.save();
     })
     .then((result) => {
+      io.getIO().emit("posts", {
+        action: "create",
+        post: { ...post._doc, creator: { _id: req.userId, name: user.name } },
+      });
+      // with emit we send this to all the connected clients
+      // io.getIO().broadcast();
+      // broadcast is sent to all user except the one who is send
       res.status(201).json({
         message: "Post created successfully!",
         post: post,
@@ -115,7 +114,7 @@ exports.getPost = (req, res, next) => {
 };
 
 exports.updatePost = (req, res, next) => {
-  console.log("req.userId", req.userId);
+  // console.log("req.userId", req.userId);
   const postId = req.params.postId;
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -135,20 +134,24 @@ exports.updatePost = (req, res, next) => {
     throw error;
   }
   Post.findById(postId)
+    .populate("creator")
     .then((post) => {
-      console.log("creator", post.creator);
+      // console.log("creator", post.creator);
       if (!post) {
         const error = new Error("Could not find post.");
         error.statusCode = 422;
         throw error;
       }
       // this check for updating to the post owner
-      console.log("post.creator", post.creator);
-      if (post.creator !== req.userId) {
+      // console.log("post.creator", post.creator._id);
+      // const bool1 = post.creator._id.toString() !== req.userId.toString();
+      // console.log(bool1);
+      if (post.creator._id.toString() !== req.userId.toString()) {
         const error = new Error("Not authorized!");
         error.statusCode = 403;
         throw error;
       }
+
       if (imageUrl !== post.imageUrl) {
         clearImage(post.imageUrl);
       }
@@ -158,6 +161,7 @@ exports.updatePost = (req, res, next) => {
       return post.save();
     })
     .then((result) => {
+      io.getIO().emit("posts", { action: "update", post: result });
       res.status(200).json({ message: "post updated!", post: result });
     })
     .catch((err) => {});
@@ -173,6 +177,8 @@ exports.deletePost = (req, res, next) => {
         error.statusCode = 404;
         throw error;
       }
+      // const bool = post.creator !== req.userId;
+      // console.log(bool);
       if (post.creator !== req.userId) {
         const error = new Error("Not authorized!");
         error.statusCode = 403;
@@ -185,11 +191,14 @@ exports.deletePost = (req, res, next) => {
       return User.findById(req.userId);
     })
     .then((user) => {
+      // console.log(user);
+      // console.log('post id', postId);
       user.posts.pull(postId);
       return user.save();
     })
     .then((result) => {
-      console.log(result);
+      // console.log(result);
+      io.getIO().emit('posts', {action: 'delete', post: postId})
       res.status(200).json({ message: "Deleted post." });
     })
     .catch((err) => {
@@ -208,3 +217,23 @@ const clearImage = (filePath) => {
     }
   });
 };
+
+exports.getUserStatus = (req, res, next) => {
+  console.log('user doc', req.userId);
+  User.findById({ _id: req.userId })
+    .then((userDoc) => {
+      console.log('user doc', userDoc);
+      if (!userDoc) {
+        const error = new Error("account not exist!");
+        error.statusCode = 404;
+        throw error;
+      }
+      res.json({ status: userDoc.status });
+    })
+    .catch((err) => {
+      if (err.statusCode) {
+        err.statusCode = 401;
+      }
+      next(err);
+    });
+}

@@ -8,7 +8,6 @@ const User = require("../models/user");
 
 const authController = require("../controllers/auth");
 
-const isAuth = require("../middleware/isAuth");
 
 router.put(
   "/signup",
@@ -31,5 +30,6 @@ router.put(
 );
 
 router.post("/login", authController.login);
+
 
 module.exports = router;

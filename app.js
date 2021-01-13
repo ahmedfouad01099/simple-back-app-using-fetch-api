@@ -3,6 +3,8 @@ const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const path = require("path");
 const multer = require("multer");
+const helmet = require("helmet");
+const compression = require("compression");
 
 const feedRoutes = require("./routes/feed");
 const authRoutes = require("./routes/auth");
@@ -14,7 +16,7 @@ const fileStorage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     let date = new Date().toDateString();
-    console.log(date);
+    // console.log(date);
     cb(
       null,
       new Date().toISOString().replace(/[\/\\:]/g, "_") +
@@ -36,6 +38,8 @@ const fileFileter = (req, file, cb) => {
   }
 };
 
+app.use(helmet());
+app.use(compression());
 // app.use(bodyParser.urlencoded()); // x-www-form-urlencoded <form>
 app.use(bodyParser.json()); // application/json
 app.use(
@@ -50,6 +54,7 @@ app.use((req, res, next) => {
     "OPTIONS, GET, POST, PUT, PATCH, DELETE"
   );
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Origin", "*");
   next();
 });
 
@@ -65,9 +70,15 @@ app.use((error, req, res, next) => {
 });
 mongoose
   .connect(
-    "mongodb+srv://ahmedfouadDB:2255@cluster0.c7jvs.mongodb.net/posts?retryWrites=true&w=majority"
+    `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASSWORD}@cluster0.c7jvs.mongodb.net/${process.env.MONGO_DEFAULT_DATABASE}?retryWrites=true&w=majority`
   )
   .then((result) => {
-    app.listen(8080);
+    const server = app.listen(process.env.PORT || 8080);
+    // const io = require("socket.io")(server);
+    const io = require("./socket").init(server);
+    // console.log(io.on);
+    io.on("connection", (socket) => {
+      console.log("Client connected");
+    });
   })
   .catch((err) => console.log(err));
